@@ -1,21 +1,40 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 贴吧本地阅读器 (Tieba Offline Reader)
 
-# Run and deploy your AI Studio app
+这是一款专为贴吧备份数据设计的纯前端本地阅读工具。用户可以直接将包含 `export.json` 及 Markdown 文件的备份压缩包或文件夹导入本应用，实现离线、流畅、沉浸式的阅读体验。
 
-This contains everything you need to run your app locally.
+## ✨ 核心功能
 
-View your app in AI Studio: https://ai.studio/apps/49000779-8562-4943-b32b-9fd23ab04e44
+* **📂 本地离线导入**：支持直接导入 `.zip` 备份包或已解压的文件夹，无需上传服务器，数据完全保留在本地，保护隐私。
+* **📑 智能目录解析**：自动解析 `export.json`，并根据 Markdown 文本中的时间戳信息，智能提取并生成按“年月”划分的章节目录，方便长篇连载帖子的快速定位。
+* **💾 进度记忆与书签**：
+    * 自动记忆每本书、每个帖子的阅读进度（精确到百分比），下次打开“继续上次阅读”。
+    * 支持手动添加书签，随时跳转至精彩片段。
+* **🎧 沉浸式听书 (TTS)**：
+    * 内置调用系统原生语音合成（TTS）引擎，支持全文连续朗读。
+    * 支持阅读进度跟随、语速调整。
+    * 提供睡眠定时功能（15/30/45/60分钟自动停止）。
+* **🎨 个性化阅读体验**：
+    * 支持自由调节字体大小。
+    * 内置“日间”与“夜间（深色）”模式，一键切换。
+* **🖼️ 高级图片浏览**：点击正文中的图片即可放大，支持自由缩放、旋转（90度）、左右镜像翻转，不错过任何细节。
+* **🔍 关键词全文搜索**：支持在当前章节内高亮搜索关键词，并提供上下条快速跳转。
 
-## Run Locally
+## 🛠️ 技术栈
 
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
+本项目为纯前端（纯 HTML/CSS/JavaScript）实现，不依赖任何后端数据库或服务端 API：
+* **JSZip**: 处理本地 ZIP 压缩包的解压与文件读取。
+* **Marked.js**: 将 Markdown 文本极速渲染为 HTML 阅读版面。
+* **LocalForage**: 基于 IndexedDB 实现超大文件的本地持久化存储（存书架数据）。
+* **Mark.js**: 实现阅读器内的关键词高亮与搜索跳转。
 
+## 🚀 使用说明
 
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+1.  **准备数据**：确保您拥有从贴吧导出的备份数据（包含 `export.json` 目录文件以及对应的 `markdown/` 文件夹）。
+2.  **导入书籍**：
+    * 点击 **“+ 导入 ZIP 备份包”** 直接选择压缩包。
+    * 或点击 **“📁 导入已解压的文件夹”** 选择解压后的整个根目录。
+3.  **开始阅读**：导入完成后，书籍会出现在本地书架中，点击即可进入目录并开始阅读。
+
+## 📦 关于打包为 App
+
+本项目完美支持套壳打包为移动端 App（Android/iOS）。由于其核心是响应式 Web 页面，您可以使用 HBuilderX（生成 uni-app/5+App）或 Android Studio（WebView）将其直接打包为独立安装包，随时随地在手机上离线阅读。
