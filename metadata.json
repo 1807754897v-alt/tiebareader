@@ -1,0 +1,6 @@
+{
+  "name": "Tieba Reader",
+  "description": "An interactive Tieba backup file reader with bookshelf, search, bookmarks and TTS support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

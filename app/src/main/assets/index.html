@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tieba 阅读器</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jszip/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/localforage/dist/localforage.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mark.js/8.11.1/mark.min.js"></script>
+    
+    <style>
+        :root { 
+            --bg-color: #FEF7FF; --text-color: #1D1B20; --header-bg: #F3EDF7; 
+            --primary-color: #6750A4; --item-bg: #FFFFFF; --item-border: #CAC4D0;
+            --reader-bg: #FFFBFE; --muted-text: #49454F; --bar-bg: #F3EDF7;
+            --btn-bg: #EADDFF; --book-cover: linear-gradient(135deg, #D0BCFF 0%, #EADDFF 100%);
+        }
+        
+        body.dark {
+            --bg-color: #141218; --text-color: #E6E1E5; --header-bg: #211F26; 
+            --primary-color: #D0BCFF; --item-bg: #1D1B20; --item-border: #49454F;
+            --reader-bg: #141218; --muted-text: #CAC4D0; --bar-bg: #211F26;
+            --btn-bg: #3B383E; --book-cover: linear-gradient(135deg, #4F378B 0%, #211F26 100%);
+        }
+
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-color); color: var(--text-color); height: 100vh; overflow: hidden; letter-spacing: -0.01em; }
+        
+        .view { display: none; flex-direction: column; height: 100%; width: 100%; position: absolute; top: 0; left: 0; background: var(--bg-color); }
+        .view.active { display: flex; }
+        
+        header { height: 56px; flex-shrink: 0; background: var(--header-bg); border-bottom: 1px solid var(--item-border); display: flex; align-items: center; justify-content: center; font-size: 19px; font-weight: 800; position: relative; z-index: 10; letter-spacing: -0.02em; }
+        .back-btn { position: absolute; left: 15px; color: var(--primary-color); font-size: 16px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: opacity 0.2s; }
+        .back-btn:active { opacity: 0.6; }
+        .action-btn { position: absolute; right: 15px; font-size: 20px; cursor: pointer; color: var(--text-color); background: none; border: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; outline: none; }
+        .font-panel { position: absolute; right: 15px; display: flex; gap: 8px; align-items: center; }
+        .font-btn { background: var(--btn-bg); border: none; color: var(--text-color); padding: 6px 12px; border-radius: 100px; font-size: 14px; font-weight: 800; cursor: pointer; transition: transform 0.1s; }
+        .font-btn:active { transform: scale(0.95); }
+        
+        .upload-area { padding: 24px 20px; text-align: center; display: flex; flex-direction: column; gap: 12px; background: var(--header-bg); border-bottom: 1px solid var(--item-border); }
+        .upload-btn { background: var(--primary-color); color: white; border: none; padding: 14px 24px; font-size: 16px; border-radius: 100px; width: 100%; font-weight: 700; box-shadow: 0 4px 12px rgba(103, 80, 164, 0.15); cursor: pointer; transition: all 0.2s ease; letter-spacing: -0.01em; }
+        .upload-btn:active { transform: translateY(1px); opacity: 0.9; }
+        .upload-folder-btn { background: transparent; color: var(--primary-color); border: 2px dashed var(--primary-color); box-shadow: none; }
+        .upload-folder-btn:active { background: rgba(103, 80, 164, 0.08); }
+        #zipPicker, #folderPicker { display: none; }
+        
+        .list-container { flex: 1; overflow-y: auto; background: var(--item-bg); }
+        .list-item { padding: 18px 20px; border-bottom: 1px solid var(--item-border); font-size: 16px; font-weight: 600; line-height: 1.4; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.1s; }
+        .list-item:active { background: var(--header-bg); }
+        .item-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 10px; }
+
+        .month-header { padding: 14px 20px; background: var(--header-bg); font-weight: 800; font-size: 16px; color: var(--primary-color); display: flex; justify-content: space-between; align-items: center; cursor: pointer; border-bottom: 1px solid var(--item-border); position: sticky; top: 0; z-index: 5; letter-spacing: -0.02em; }
+        .month-header:active { background: var(--btn-bg); }
+        .month-container { display: block; }
+        .month-container .list-item { padding-left: 35px; background: var(--reader-bg); }
+        .toggle-icon { font-size: 12px; transition: transform 0.3s; }
+        .toggle-icon.collapsed { transform: rotate(-90deg); }
+
+        #library-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px 16px; padding: 24px 20px; align-content: start; background: var(--reader-bg); flex: 1; overflow-y: auto; }
+        .book-wrapper { display: flex; flex-direction: column; gap: 8px; position: relative; cursor: pointer; }
+        .book-cover { aspect-ratio: 3 / 4; background: var(--book-cover); border: 1px solid var(--item-border); border-radius: 4px 16px 16px 4px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); padding: 18px 12px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; transition: transform 0.2s; }
+        .book-wrapper:active .book-cover { transform: scale(0.96); }
+        .book-cover::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: rgba(0,0,0,0.08); border-right: 1px solid rgba(255,255,255,0.4); }
+        .book-cover-title { font-size: 16px; font-weight: 800; text-align: center; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; color: var(--text-color); letter-spacing: -0.03em; text-shadow: 0 1px 1px rgba(255,255,255,0.3); }
+        body.dark .book-cover-title { text-shadow: 0 1px 1px rgba(0,0,0,0.5); }
+        .book-date { text-align: center; font-size: 11px; font-weight: 600; color: var(--muted-text); }
+        .book-delete { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; background: #FF3B30; color: white; border-radius: 50%; font-size: 12px; font-weight: bold; display: flex; align-items: center; justify-content: center; border: none; cursor: pointer; z-index: 2; box-shadow: 0 2px 6px rgba(0,0,0,0.2); transition: transform 0.2s; }
+        .book-delete:active { transform: scale(0.8); }
+
+        #reader { flex: 1; overflow-y: auto; padding: 24px 20px 80px; background: var(--reader-bg); line-height: 1.85; font-size: 18px; position: relative; scroll-behavior: smooth; font-weight: 500; }
+        #reader p { margin-bottom: 24px; }
+        #reader h1, #reader h2, #reader h3 { font-weight: 800; tracking: -0.03em; margin: 28px 0 16px; line-height: 1.25; }
+        #reader img { max-width: 100%; height: auto; border-radius: 16px; margin: 16px 0; cursor: zoom-in; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+        #loading { display: none; text-align: center; padding: 24px; color: var(--muted-text); font-size: 15px; font-weight: bold; position: absolute; top: 180px; width: 100%; z-index: 50;}
+
+        mark { background: #EADDFF; color: #1D192B; border-radius: 4px; padding: 1px 4px; font-weight: 700; }
+        mark.current { background: #6750A4; color: #FFFFFF; }
+
+        .search-bar { display: none; position: absolute; top: 56px; left: 0; width: 100%; background: var(--header-bg); padding: 12px 16px; border-bottom: 1px solid var(--item-border); z-index: 9; align-items: center; gap: 8px; }
+        .search-bar.active { display: flex; }
+        .search-bar input { flex: 1; padding: 10px 16px; border: 1px solid var(--item-border); border-radius: 100px; background: var(--item-bg); color: var(--text-color); font-size: 15px; font-weight: 600; outline: none; }
+        .search-bar button { background: var(--btn-bg); color: var(--text-color); border: none; padding: 10px 16px; border-radius: 100px; font-size: 14px; font-weight: 800; cursor: pointer; }
+
+        .bottom-bar { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--bar-bg); border-top: 1px solid var(--item-border); display: flex; align-items: center; padding: 10px 16px; gap: 10px; z-index: 10; height: 72px; justify-content: space-between; }
+        .slider-container { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: bold; color: var(--muted-text); margin: 0 5px; }
+        .slider-container input[type=range] { flex: 1; accent-color: var(--primary-color); height: 6px; border-radius: 100px; }
+        .bottom-btn { background: none; border: none; color: var(--text-color); font-size: 20px; cursor: pointer; padding: 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 44px; transition: opacity 0.1s; }
+        .bottom-btn:active { opacity: 0.6; }
+        .bottom-btn span { font-size: 11px; font-weight: 800; color: var(--text-color); white-space: nowrap; }
+
+        .tts-float-widget { display: none; position: fixed; bottom: 88px; right: 16px; background: rgba(33, 31, 38, 0.95); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); color: #fff; border-radius: 24px; padding: 12px 18px; z-index: 100; align-items: center; gap: 16px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); font-size: 14px; border: 1px solid rgba(255,255,255,0.1); }
+        body.dark .tts-float-widget { background: rgba(243, 237, 247, 0.95); color: #141218; border: 1px solid rgba(0,0,0,0.1); }
+        .tts-slider-wrap { display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
+        .tts-progress-lbl { font-weight: 800; letter-spacing: 0.5px; font-size: 12px; }
+        .tts-slider-wrap input[type=range] { width: 100%; height: 6px; accent-color: var(--primary-color); background: rgba(255,255,255,0.3); border-radius: 100px; outline: none; -webkit-appearance: none; }
+        body.dark .tts-slider-wrap input[type=range] { background: rgba(0,0,0,0.2); }
+        .tts-slider-wrap input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--primary-color); cursor: pointer; }
+        .tts-timer-btn { background: var(--primary-color); border: none; color: white; padding: 8px 16px; border-radius: 100px; font-size: 12px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(103, 80, 164, 0.3); }
+
+        .modal-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 100; justify-content: center; align-items: flex-end; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: var(--header-bg); width: 100%; border-radius: 28px 28px 0 0; padding: 24px 20px 40px; display: flex; flex-direction: column; max-height: 75%; border-top: 1px solid var(--item-border); }
+        .modal-header { display: flex; justify-content: space-between; font-weight: 800; margin-bottom: 20px; font-size: 20px; letter-spacing: -0.02em; }
+        .modal-close { color: var(--primary-color); cursor: pointer; font-size: 16px; font-weight: 800; }
+        .bm-list { flex: 1; overflow-y: auto; margin-bottom: 20px; }
+        .bm-item { padding: 14px 0; border-bottom: 1px solid var(--item-border); display: flex; justify-content: space-between; align-items: center; }
+        .add-bm-btn { background: var(--primary-color); color: white; border: none; padding: 14px; border-radius: 100px; font-size: 16px; font-weight: 700; width: 100%; box-shadow: 0 4px 12px rgba(103, 80, 164, 0.15); }
+
+        .img-viewer-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.98); z-index: 200; flex-direction: column; }
+        .img-viewer-modal.active { display: flex; }
+        .img-view-tools { background: rgba(255,255,255,0.08); padding: 14px; display: flex; gap: 18px; align-items: center; justify-content: center; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .img-view-tools button { background: rgba(255,255,255,0.15); border: none; color: white; padding: 8px 16px; border-radius: 100px; font-size: 16px; cursor: pointer; font-weight: 800; }
+        .img-view-body { flex: 1; display: flex; justify-content: center; align-items: center; overflow: hidden; padding: 16px; position: relative; }
+        #viewerTarget { max-width: 100%; max-height: 100%; transition: transform 0.2s cubic-bezier(0.1, 0.8, 0.3, 1); object-fit: contain; }
+        
+        .bm-title { font-size: 16px; font-weight: 700; color: var(--text-color); }
+        .bm-progress { font-size: 12px; color: var(--muted-text); font-weight: 600; margin-top: 4px; }
+        .delete-btn { background: #FF3B30; color: white; border: none; padding: 8px 16px; border-radius: 100px; font-weight: 800; font-size: 13px; cursor: pointer; transition: transform 0.1s; }
+        .delete-btn:active { transform: scale(0.9); }
+    </style>
+</head>
+<body>
+
+    <div id="library-view" class="view active">
+        <header>本地书架<button class="action-btn" onclick="toggleDarkMode()" id="theme-btn">🌙</button></header>
+        <div class="upload-area">
+            <input type="file" id="zipPicker" accept="*/*">
+            <input type="file" id="folderPicker" webkitdirectory directory multiple>
+            <button class="upload-btn" onclick="document.getElementById('zipPicker').click()">+ 导入 ZIP 备份包</button>
+            <button class="upload-btn upload-folder-btn" onclick="document.getElementById('folderPicker').click()">📁 导入已解压的文件夹</button>
+        </div>
+        <div id="loading">正在拼命处理中...</div>
+        <div id="library-list"></div>
+    </div>
+
+    <div id="catalog-view" class="view">
+        <header>
+            <div class="back-btn" onclick="showView('library-view')">‹ 书架</div>
+            <span id="catalog-title" style="max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">目录</span>
+        </header>
+        <div id="catalog-list" class="list-container"></div>
+    </div>
+
+    <div id="reader-view" class="view">
+        <header>
+            <div class="back-btn" onclick="closeReader()">‹ 目录</div>
+            <span id="header-title" style="max-width: 35%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">正文</span>
+            <div class="font-panel">
+                <button class="font-btn" onclick="adjustFontSize(-1)">A⁻</button>
+                <button class="font-btn" onclick="adjustFontSize(1)">A⁺</button>
+            </div>
+        </header>
+        
+        <div class="search-bar" id="searchBar">
+            <input type="text" id="searchInput" placeholder="搜索关键词..." onkeyup="if(event.key==='Enter') performSearch()">
+            <button onclick="performSearch()">搜索</button>
+            <button onclick="prevMatch()">↑</button>
+            <button onclick="nextMatch()">↓</button>
+            <button onclick="toggleSearch()" style="background:none;">取消</button>
+        </div>
+
+        <div id="reader" onclick="handleReaderClick(event)"></div>
+
+        <div class="tts-float-widget" id="ttsControlPanel">
+            <div class="tts-slider-wrap">
+                <span class="tts-progress-lbl" id="ttsProgressLbl">0 / 0</span>
+                <input type="range" id="ttsSlider" min="0" max="1" value="0" step="1">
+            </div>
+            <button class="tts-timer-btn" onclick="cycleTtsTimer()">⏱️ <span id="ttsTimerLbl">定时</span></button>
+        </div>
+
+        <div class="bottom-bar">
+            <button class="bottom-btn" onclick="openBookmarkModal()">🔖<span>书签</span></button>
+            <div class="slider-container">
+                <span id="progress-text">0%</span>
+                <input type="range" id="progressSlider" min="0" max="100" value="0" step="0.1">
+            </div>
+            <button class="bottom-btn" onclick="toggleTTS()" id="ttsBtn">🎧<span id="tts-label">听书</span></button>
+            <button class="bottom-btn" onclick="toggleSearch()">🔍<span>搜索</span></button>
+        </div>
+    </div>
+
+    <div id="imageViewer" class="img-viewer-modal" onclick="closeImagePreview()">
+        <div class="img-view-tools" onclick="event.stopPropagation()">
+            <button onclick="changeImgScale(0.25)">➕</button>
+            <button onclick="changeImgScale(-0.25)">➖</button>
+            <button onclick="rotateImg()">🔄</button>
+            <button onclick="flipImg()">↔️</button>
+            <button onclick="closeImagePreview()" style="margin-left: auto; background: #ff3b30;">❌</button>
+        </div>
+        <div class="img-view-body"><img id="viewerTarget" src="" onclick="event.stopPropagation()"></div>
+    </div>
+
+    <div class="modal-overlay" id="bookmarkModal" onclick="closeBookmarkModal(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header"><span>我的书签</span><span class="modal-close" onclick="closeBookmarkModal()">完成</span></div>
+            <div class="bm-list" id="bookmarkList"></div>
+            <button class="add-bm-btn" onclick="addCurrentBookmark()">+ 添加当前位置为书签</button>
+        </div>
+    </div>
+
+    <script>
+        let myLibrary = []; let currentZip = null; let rootDirName = "";
+        let currentBookId = null; let currentMdPath = null; let currentPostTitle = null; let currentFontSize = 17; 
+        let imgScale = 1; let imgRotate = 0; let imgFlip = 1; 
+        let ttsQueueData = []; let currentChunkIndex = 0; let isSpeaking = false; let isPaused = false;
+        const timerPresets = [0, 15, 30, 45, 60]; let currentTimerPresetIdx = 0; let ttsTimerCountdown = 0; let ttsTimerIntervalId = null;
+
+        const zipPicker = document.getElementById('zipPicker'); const folderPicker = document.getElementById('folderPicker');
+        const libraryList = document.getElementById('library-list'); const catalogList = document.getElementById('catalog-list');
+        const readerContent = document.getElementById('reader'); const progressSlider = document.getElementById('progressSlider');
+        const progressText = document.getElementById('progress-text'); const viewerTarget = document.getElementById('viewerTarget');
+        const ttsControlPanel = document.getElementById('ttsControlPanel'); const ttsProgressLbl = document.getElementById('ttsProgressLbl');
+        const ttsTimerLbl = document.getElementById('ttsTimerLbl'); const ttsSlider = document.getElementById('ttsSlider');
+
+        window.onload = async () => {
+            if (localStorage.getItem('darkMode') === 'true') { document.body.classList.add('dark'); document.getElementById('theme-btn').innerText = '☀️'; }
+            currentFontSize = parseInt(localStorage.getItem('readerFontSize')) || 17; readerContent.style.fontSize = currentFontSize + 'px';
+            localforage.config({ name: 'TiebaReaderDB' }); myLibrary = await localforage.getItem('library_meta') || []; renderLibrary();
+        };
+
+        function adjustFontSize(delta) { currentFontSize = Math.max(12, Math.min(32, currentFontSize + delta)); readerContent.style.fontSize = currentFontSize + 'px'; localStorage.setItem('readerFontSize', currentFontSize); }
+
+        function buildTtsData() {
+            ttsQueueData = []; const blocks = readerContent.querySelectorAll('p, li');
+            blocks.forEach(block => {
+                let text = block.innerText.trim(); if (!text) return;
+                if (/^\d+楼\s*·\s*时间：/.test(text)) return; if (/IP：.*设备：/.test(text)) return; if (/^(目录|标题)$/.test(text)) return;
+                let cleanText = text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|\uD83E[\uDD00-\uDDFF]/g, '');
+                let sentences = cleanText.match(/[^。！？.!?]+[。！？.!?]*/g) || [cleanText];
+                sentences.forEach(s => { let st = s.trim(); if (st.length > 0 && !/^[\s。！？.!?]+$/.test(st)) { ttsQueueData.push({ text: st + " ", el: block }); } });
+            });
+        }
+
+        function toggleTTS() {
+            const label = document.getElementById('tts-label'); let unlockMsg = new SpeechSynthesisUtterance(''); window.speechSynthesis.speak(unlockMsg);
+            if (!isSpeaking) { setTimeout(startTTS, 50); } else {
+                if (isPaused) { isPaused = false; label.innerText = '暂停'; ttsControlPanel.style.display = 'flex'; speakNextChunk(); } 
+                else { isPaused = true; label.innerText = '继续'; ttsControlPanel.style.display = 'none'; window.speechSynthesis.cancel(); }
+            }
+        }
+
+        function startTTS() {
+            window.speechSynthesis.cancel(); buildTtsData(); if (ttsQueueData.length === 0) return alert("无可朗读文字！");
+            let targetScroll = readerContent.scrollTop; let startIndex = 0;
+            for (let i = 0; i < ttsQueueData.length; i++) { if (ttsQueueData[i].el.offsetTop >= targetScroll - 50) { startIndex = i; break; } }
+            currentChunkIndex = startIndex; isSpeaking = true; isPaused = false;
+            ttsSlider.max = ttsQueueData.length > 0 ? ttsQueueData.length - 1 : 0; ttsSlider.value = currentChunkIndex;
+            document.getElementById('tts-label').innerText = '暂停'; ttsControlPanel.style.display = 'flex'; updateTtsUI(); speakNextChunk();
+        }
+
+        function speakNextChunk() {
+            if (!isSpeaking || isPaused) return;
+            if (currentChunkIndex >= ttsQueueData.length) { stopTTS(); return; }
+            updateTtsUI(); const currentData = ttsQueueData[currentChunkIndex];
+            if (currentData.el) {
+                const elTop = currentData.el.offsetTop; const containerTop = readerContent.scrollTop; const containerHeight = readerContent.clientHeight;
+                if (elTop < containerTop + 50 || elTop > containerTop + containerHeight - 150) { readerContent.scrollTo({ top: elTop - 80, behavior: 'smooth' }); }
+            }
+            let utterance = new SpeechSynthesisUtterance(currentData.text);
+            let voices = window.speechSynthesis.getVoices(); let zhVoice = voices.find(v => v.lang.includes('zh') || v.lang.includes('cmn'));
+            if (zhVoice) utterance.voice = zhVoice; utterance.lang = 'zh-CN'; utterance.rate = 1.1; 
+            utterance.onend = () => { currentChunkIndex++; if (isSpeaking && !isPaused) setTimeout(speakNextChunk, 150); };
+            utterance.onerror = (e) => { currentChunkIndex++; if (isSpeaking && !isPaused) setTimeout(speakNextChunk, 150); };
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function updateTtsUI() { ttsProgressLbl.innerText = `${currentChunkIndex + 1} / ${ttsQueueData.length}`; ttsSlider.value = currentChunkIndex; }
+        ttsSlider.addEventListener('input', (e) => { ttsProgressLbl.innerText = `${parseInt(e.target.value) + 1} / ${ttsQueueData.length}`; });
+        ttsSlider.addEventListener('change', (e) => {
+            currentChunkIndex = parseInt(e.target.value);
+            if (ttsQueueData[currentChunkIndex] && ttsQueueData[currentChunkIndex].el) { readerContent.scrollTo({ top: ttsQueueData[currentChunkIndex].el.offsetTop - 80, behavior: 'smooth' }); }
+            if (isSpeaking) { window.speechSynthesis.cancel(); if (!isPaused) speakNextChunk(); else updateTtsUI(); }
+        });
+
+        readerContent.addEventListener('scroll', () => { 
+            const maxScroll = readerContent.scrollHeight - readerContent.clientHeight; 
+            if(maxScroll > 0) { 
+                const percent = (readerContent.scrollTop / maxScroll) * 100; progressSlider.value = percent; progressText.innerText = percent.toFixed(1) + "%"; 
+                if (currentBookId && currentMdPath) { localStorage.setItem(`lastRead_${currentBookId}_${currentMdPath}`, percent); }
+            } 
+        });
+
+        progressSlider.addEventListener('change', (e) => {
+            const maxScroll = readerContent.scrollHeight - readerContent.clientHeight; readerContent.scrollTop = (e.target.value / 100) * maxScroll; 
+            if (ttsQueueData.length > 0) {
+                let targetScroll = readerContent.scrollTop; let closestIndex = 0;
+                for (let i = 0; i < ttsQueueData.length; i++) { if (ttsQueueData[i].el.offsetTop >= targetScroll - 50) { closestIndex = i; break; } }
+                currentChunkIndex = closestIndex; updateTtsUI();
+                if (isSpeaking) { window.speechSynthesis.cancel(); if (!isPaused) speakNextChunk(); }
+            }
+        });
+
+        function jumpToPercent(percent) { 
+            const maxScroll = readerContent.scrollHeight - readerContent.clientHeight; readerContent.scrollTop = (percent / 100) * maxScroll; closeBookmarkModal(); 
+            if (ttsQueueData.length > 0) {
+                let targetScroll = readerContent.scrollTop; let closestIndex = 0;
+                for (let i = 0; i < ttsQueueData.length; i++) { if (ttsQueueData[i].el.offsetTop >= targetScroll - 50) { closestIndex = i; break; } }
+                currentChunkIndex = closestIndex; updateTtsUI();
+                if (isSpeaking && !isPaused) { window.speechSynthesis.cancel(); speakNextChunk(); }
+            }
+        }
+
+        function cycleTtsTimer() {
+            currentTimerPresetIdx = (currentTimerPresetIdx + 1) % timerPresets.length; let minutes = timerPresets[currentTimerPresetIdx]; clearInterval(ttsTimerIntervalId);
+            if (minutes === 0) { ttsTimerLbl.innerText = '定时'; } else {
+                ttsTimerCountdown = minutes; ttsTimerLbl.innerText = `${ttsTimerCountdown}分`;
+                ttsTimerIntervalId = setInterval(() => {
+                    ttsTimerCountdown--;
+                    if (ttsTimerCountdown <= 0) { stopTTS(); alert("💤 睡眠定时时间到，听书已为您自动关闭。"); } else { ttsTimerLbl.innerText = `${ttsTimerCountdown}分`; }
+                }, 60000);
+            }
+        }
+
+        function stopTTS() { window.speechSynthesis.cancel(); clearInterval(ttsTimerIntervalId); isSpeaking = false; isPaused = false; ttsQueueData = []; currentChunkIndex = 0; currentTimerPresetIdx = 0; document.getElementById('tts-label').innerText = '听书'; ttsControlPanel.style.display = 'none'; ttsTimerLbl.innerText = '定时'; }
+        function closeReader() { stopTTS(); showView('catalog-view'); document.getElementById('searchBar').classList.remove('active'); if(markInstance) markInstance.unmark(); }
+        function handleReaderClick(event) { if (event.target.tagName === 'IMG') openImagePreview(event.target.src); }
+        function openImagePreview(src) { imgScale = 1; imgRotate = 0; imgFlip = 1; updateImageViewerTransform(); viewerTarget.src = src; document.getElementById('imageViewer').classList.add('active'); }
+        function closeImagePreview() { document.getElementById('imageViewer').classList.remove('active'); viewerTarget.src = ''; }
+        function changeImgScale(delta) { imgScale = Math.max(0.25, Math.min(5, imgScale + delta)); updateImageViewerTransform(); }
+        function rotateImg() { imgRotate = (imgRotate + 90) % 360; updateImageViewerTransform(); }
+        function flipImg() { imgFlip = imgFlip === 1 ? -1 : 1; updateImageViewerTransform(); }
+        function updateImageViewerTransform() { viewerTarget.style.transform = `scale(${imgScale * imgFlip}, ${imgScale}) rotate(${imgRotate}deg)`; }
+        function toggleDarkMode() { const isDark = document.body.classList.toggle('dark'); localStorage.setItem('darkMode', isDark); document.getElementById('theme-btn').innerText = isDark ? '☀️' : '🌙'; }
+        function showView(viewId) { document.querySelectorAll('.view').forEach(el => el.classList.remove('active')); document.getElementById(viewId).classList.add('active'); if (viewId === 'library-view') currentZip = null; }
+
+        // Convert File to ArrayBuffer for 100% stable database serialization on all WebViews
+        function fileToArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        zipPicker.addEventListener('change', async (event) => {
+            const file = event.target.files[0]; if (!file) return; document.getElementById('loading').style.display = 'block';
+            try {
+                const zip = new JSZip(); 
+                const testZip = await zip.loadAsync(file); 
+                
+                let hasJson = false;
+                testZip.forEach(path => { if (path.toLowerCase().endsWith('export.json')) hasJson = true; });
+                
+                let hasReadableFiles = false;
+                testZip.forEach(path => {
+                    const lower = path.toLowerCase();
+                    if (lower.endsWith('.md') || lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt')) {
+                        if (!path.includes('__MACOSX') && !path.startsWith('.') && !path.includes('.DS_Store')) {
+                            hasReadableFiles = true;
+                        }
+                    }
+                });
+                
+                if (!hasJson && !hasReadableFiles) {
+                    throw new Error("该压缩包中未检测到可以阅读的贴吧文章或文本文件 (.html, .md, .txt)！");
+                }
+                
+                const id = 'zip_' + Date.now(); 
+                const title = file.name.replace(/\.[^/.]+$/, ""); 
+                const arrayBuffer = await fileToArrayBuffer(file);
+                
+                await localforage.setItem(id, arrayBuffer);
+                myLibrary.unshift({ id: id, title: title, date: new Date().toLocaleDateString(), bookmarks: [] });
+                await localforage.setItem('library_meta', myLibrary); 
+                renderLibrary(); 
+                alert(`导入成功！已加入到本地书架。`);
+            } catch (error) { 
+                alert("导入失败: " + error.message); 
+            } finally { 
+                document.getElementById('loading').style.display = 'none'; 
+                zipPicker.value = ''; 
+            }
+        });
+
+        folderPicker.addEventListener('change', async (event) => {
+            const files = event.target.files; if (!files || files.length === 0) return; document.getElementById('loading').style.display = 'block';
+            try {
+                const zip = new JSZip(); 
+                let hasJson = false; 
+                let hasReadableFiles = false;
+                let rootFolderName = "";
+                
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i]; 
+                    const pathLower = file.webkitRelativePath.toLowerCase();
+                    if (pathLower.endsWith('export.json')) { 
+                        hasJson = true; 
+                        rootFolderName = file.webkitRelativePath.split('/')[0]; 
+                    }
+                    if (pathLower.endsWith('.md') || pathLower.endsWith('.html') || pathLower.endsWith('.htm') || pathLower.endsWith('.txt')) {
+                        hasReadableFiles = true;
+                        if (!rootFolderName) {
+                            rootFolderName = file.webkitRelativePath.split('/')[0];
+                        }
+                    }
+                    zip.file(file.webkitRelativePath, file); 
+                }
+                
+                if (!hasJson && !hasReadableFiles) {
+                    throw new Error("所选文件夹中未找到任何支持的贴吧备份或文本内容！");
+                }
+                
+                const id = 'zip_' + Date.now(); 
+                const title = rootFolderName || "导入的本地文件夹"; 
+                const zipBuffer = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" }); 
+                
+                await localforage.setItem(id, zipBuffer);
+                myLibrary.unshift({ id: id, title: title, date: new Date().toLocaleDateString(), bookmarks: [] }); 
+                await localforage.setItem('library_meta', myLibrary); 
+                renderLibrary(); 
+                alert(`文件夹成功封装并导入！`);
+            } catch (error) { 
+                alert("导入文件夹失败: " + error.message); 
+            } finally { 
+                document.getElementById('loading').style.display = 'none'; 
+                folderPicker.value = ''; 
+            }
+        });
+
+        function renderLibrary() {
+            libraryList.innerHTML = ''; 
+            if (myLibrary.length === 0) { 
+                libraryList.innerHTML = '<div style="text-align:center; padding:50px; color:var(--muted-text); grid-column: 1 / -1; font-weight:800;">书架空空如也，快点击上方导入 ZIP 备份吧！</div>'; 
+                return; 
+            }
+            myLibrary.forEach(book => {
+                const div = document.createElement('div'); 
+                div.className = 'book-wrapper';
+                div.innerHTML = `<div class="book-cover"><div class="book-cover-title">${book.title}</div></div><div class="book-date">${book.date}</div><button class="book-delete" onclick="deleteBook(event, '${book.id}', '${book.title}')">✕</button>`;
+                div.onclick = () => openBook(book.id, book.title); 
+                libraryList.appendChild(div);
+            });
+        }
+
+        window.deleteBook = async function(e, id, title) { 
+            e.stopPropagation(); 
+            if (!confirm(`确定删除《${title}》吗？所有进度及书签将被清除。`)) return; 
+            await localforage.removeItem(id); 
+            myLibrary = myLibrary.filter(b => b.id !== id); 
+            await localforage.setItem('library_meta', myLibrary); 
+            renderLibrary(); 
+        };
+
+        // Render catalog structure parsed from export.json
+        async function renderCatalogFromJson(catalog) {
+            catalogList.innerHTML = '';
+            
+            if (!catalog.posts || catalog.posts.length === 0) {
+                catalogList.innerHTML = '<div style="text-align:center; padding:50px; color:var(--muted-text);">此备份的主题目录为空</div>';
+                return;
+            }
+            
+            // Helpful Quick Continue / Read from Start button
+            const startBtn = document.createElement('div');
+            startBtn.className = 'list-item';
+            startBtn.style.background = 'var(--btn-bg)';
+            startBtn.style.color = 'var(--primary-color)';
+            startBtn.style.borderRadius = '12px';
+            startBtn.style.margin = '14px 20px 8px';
+            startBtn.style.padding = '14px 20px';
+            startBtn.style.fontWeight = '800';
+            startBtn.innerHTML = `<div class="item-title">📖 开始阅读第一章节</div>`;
+            
+            const firstPost = catalog.posts.find(p => p.markdown || p.html || p.file);
+            const firstPath = firstPost ? (firstPost.markdown || firstPost.html || firstPost.file) : null;
+            const firstTitle = firstPost ? (firstPost.display_name || firstPost.title || "第一页") : "开始阅读";
+            if (firstPath) {
+                startBtn.onclick = () => loadAndRenderMarkdown(firstPath, firstTitle, null);
+                catalogList.appendChild(startBtn);
+            }
+            
+            for (let i = 0; i < catalog.posts.length; i++) {
+                const item = catalog.posts[i];
+                const postTitle = item.display_name || item.title || `贴子分页 ${i + 1}`;
+                const filePath = item.markdown || item.html || item.file;
+                
+                if (filePath) {
+                    const div = document.createElement('div');
+                    div.className = 'list-item';
+                    
+                    const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
+                    let percentStr = "";
+                    if (lastPercent) {
+                        percentStr = `<span style="font-size: 11px; font-weight: 800; background: var(--btn-bg); color: var(--primary-color); padding: 2px 8px; border-radius: 100px; margin-left: 8px;">已读 ${parseFloat(lastPercent).toFixed(1)}%</span>`;
+                    }
+                    
+                    div.innerHTML = `<div class="item-title">📄 ${postTitle} ${percentStr}</div>`;
+                    div.onclick = () => loadAndRenderMarkdown(filePath, postTitle, null);
+                    catalogList.appendChild(div);
+                }
+            }
+        }
+
+        // Render catalog structure automatically scanned from readable raw files
+        async function renderCatalogFromScanning() {
+            catalogList.innerHTML = '';
+            const files = [];
+            
+            currentZip.forEach((relativePath, file) => {
+                if (!file.dir) {
+                    const lower = relativePath.toLowerCase();
+                    if (lower.endsWith('.md') || lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt')) {
+                        if (!relativePath.includes('__MACOSX') && !relativePath.split('/').some(part => part.startsWith('.'))) {
+                            files.push(relativePath);
+                        }
+                    }
+                }
+            });
+            
+            if (files.length === 0) {
+                catalogList.innerHTML = '<div style="text-align:center; padding:50px; color:var(--muted-text);">未找到可阅读的文章文件</div>';
+                return;
+            }
+            
+            // Sort files numerically / alphabetically to preserve chronological floor offsets
+            files.sort((a, b) => {
+                return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            
+            const startBtn = document.createElement('div');
+            startBtn.className = 'list-item';
+            startBtn.style.background = 'var(--btn-bg)';
+            startBtn.style.color = 'var(--primary-color)';
+            startBtn.style.borderRadius = '12px';
+            startBtn.style.margin = '14px 20px 8px';
+            startBtn.style.padding = '14px 20px';
+            startBtn.style.fontWeight = '800';
+            startBtn.innerHTML = `<div class="item-title">📖 从头开始阅读</div>`;
+            
+            const firstPath = files[0];
+            const firstTitle = firstPath.split('/').pop().replace(/\.(html|htm|md|txt)$/i, '');
+            startBtn.onclick = () => loadAndRenderMarkdown(firstPath, firstTitle, null);
+            catalogList.appendChild(startBtn);
+            
+            files.forEach(filePath => {
+                const displayName = filePath.split('/').pop().replace(/\.(html|htm|md|txt)$/i, '');
+                const div = document.createElement('div');
+                div.className = 'list-item';
+                
+                const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
+                let percentStr = "";
+                if (lastPercent) {
+                    percentStr = `<span style="font-size: 11px; font-weight: 800; background: var(--btn-bg); color: var(--primary-color); padding: 2px 8px; border-radius: 100px; margin-left: 8px;">已读 ${parseFloat(lastPercent).toFixed(1)}%</span>`;
+                }
+                
+                div.innerHTML = `<div class="item-title">📄 ${displayName} ${percentStr}</div>`;
+                div.onclick = () => loadAndRenderMarkdown(filePath, displayName, null);
+                catalogList.appendChild(div);
+            });
+        }
+
+        async function openBook(id, title) {
+            document.getElementById('loading').style.display = 'block'; 
+            catalogList.innerHTML = ''; 
+            document.getElementById('catalog-title').innerText = title; 
+            currentBookId = id;
+
+            try {
+                const arrayBuffer = await localforage.getItem(id); 
+                if (!arrayBuffer) throw new Error("文件包未找到或已被清理。");
+                
+                const zip = new JSZip(); 
+                currentZip = await zip.loadAsync(arrayBuffer);
+                
+                let jsonPath = null; 
+                currentZip.forEach(path => { 
+                    if (path.toLowerCase().endsWith('export.json')) jsonPath = path; 
+                });
+                
+                if (jsonPath) {
+                    rootDirName = jsonPath.substring(0, jsonPath.lastIndexOf('export.json'));
+                    const jsonString = await currentZip.file(jsonPath).async("string"); 
+                    const catalog = JSON.parse(jsonString);
+                    await renderCatalogFromJson(catalog);
+                } else {
+                    rootDirName = "";
+                    await renderCatalogFromScanning();
+                }
+                
+                showView('catalog-view');
+            } catch (error) { 
+                alert("加载书籍失败: " + error.message); 
+            } finally { 
+                document.getElementById('loading').style.display = 'none'; 
+            }
+        }
+
+        function findFileInZip(targetPath) {
+            let cleanPath = targetPath.replace(/\\/g, '/');
+            while (cleanPath.startsWith('/')) {
+                cleanPath = cleanPath.substring(1);
+            }
+            
+            let fullPath = rootDirName;
+            if (fullPath && !fullPath.endsWith('/')) {
+                fullPath += '/';
+            }
+            fullPath += cleanPath;
+            
+            let entry = currentZip.file(fullPath);
+            if (entry) return entry;
+            
+            entry = currentZip.file(cleanPath);
+            if (entry) return entry;
+            
+            const fileName = cleanPath.split('/').pop();
+            const foundKeys = Object.keys(currentZip.files).filter(key => {
+                const kClean = key.replace(/\\/g, '/');
+                return kClean.endsWith('/' + fileName) || kClean === fileName;
+            });
+            if (foundKeys.length > 0) return currentZip.files[foundKeys[0]];
+            
+            const idMatch = fileName.match(/\d{8,}/);
+            const extMatch = fileName.match(/\.[a-zA-Z0-9]+$/);
+            if (idMatch && extMatch) {
+                const matchedKeys = Object.keys(currentZip.files).filter(key => key.includes(idMatch[0]) && key.endsWith(extMatch[0]));
+                if (matchedKeys.length > 0) return currentZip.files[matchedKeys[0]];
+            }
+            return null;
+        }
+
+        async function loadAndRenderMarkdown(mdPath, title, targetSearchText) {
+            currentMdPath = mdPath; 
+            currentPostTitle = title;
+            try {
+                showView('reader-view'); 
+                document.getElementById('header-title').innerText = title; 
+                readerContent.innerHTML = '<div style="text-align:center; padding:60px; color:var(--muted-text); font-weight:800;">📄 贴子正文极速加载并排版中...</div>';
+                
+                let fileEntry = findFileInZip(mdPath); 
+                if (!fileEntry) throw new Error("找不到该页面对应的任何文本正文文件！");
+                
+                let rawText = await fileEntry.async("string");
+                const lowerPath = mdPath.toLowerCase();
+                
+                if (lowerPath.endsWith('.html') || lowerPath.endsWith('.htm') || lowerPath.endsWith('.xhtml')) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(rawText, 'text/html');
+                    
+                    const imgElements = doc.querySelectorAll('img');
+                    for (let img of imgElements) {
+                        const src = img.getAttribute('src');
+                        if (src && !src.startsWith('data:') && !src.startsWith('http:') && !src.startsWith('https:')) {
+                            const cleanImgPath = src.replace(/^(\.\.\/|\.\/)+/g, '').replace(/^(\.\dots\/|\.\/)+/g, '');
+                            const imgEntry = findFileInZip(cleanImgPath);
+                            if (imgEntry) {
+                                try {
+                                    const blob = await imgEntry.async("blob");
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    img.setAttribute('src', blobUrl);
+                                } catch (err) {
+                                    console.error("加载贴吧内嵌图片失败:", err);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Scope static sheets and display
+                    const styles = doc.querySelectorAll('style, link[rel="stylesheet"]');
+                    styles.forEach(s => {
+                        readerContent.appendChild(s);
+                    });
+                    
+                    const bodyContent = doc.body ? doc.body.innerHTML : rawText;
+                    readerContent.innerHTML = bodyContent;
+                } else if (lowerPath.endsWith('.txt')) {
+                    const escaped = rawText
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+                    const paragraphs = escaped.split(/\n+/).map(p => {
+                        const trimmed = p.trim();
+                        return trimmed ? `<p>${trimmed}</p>` : "";
+                    }).join('');
+                    readerContent.innerHTML = paragraphs;
+                } else {
+                    let mdText = rawText;
+                    
+                    // Parse embedded img tags inside Markdown
+                    const htmlImgRegex = /<img\s+[^>]*src=["']([^"']+)["'][^>]*>/gi;
+                    let htmlImgMatches;
+                    while ((htmlImgMatches = htmlImgRegex.exec(rawText)) !== null) {
+                        const fullTag = htmlImgMatches[0];
+                        const srcVal = htmlImgMatches[1];
+                        if (srcVal && !srcVal.startsWith('data:') && !srcVal.startsWith('http:') && !srcVal.startsWith('https:')) {
+                            const cleanImgPath = srcVal.replace(/^(\.\.\/|\.\/)+/, '');
+                            const imgEntry = findFileInZip(cleanImgPath);
+                            if (imgEntry) {
+                                try {
+                                    const blob = await imgEntry.async("blob");
+                                    const blobUrl = URL.createObjectURL(blob);
+                                    const replacedTag = fullTag.replace(srcVal, blobUrl);
+                                    mdText = mdText.replace(fullTag, replacedTag);
+                                } catch (err) {
+                                    console.error("加载 Markdown HTML 元素格式图片失败:", err);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Parse standard Markdown images format
+                    const matches = [...mdText.matchAll(/!\[(.*?)\]\((.*?)\)/g)];
+                    for (const match of matches) {
+                        const cleanImgPath = match[2].replace(/^(\.\.\/|\.\/)+/, '');
+                        let imgEntry = findFileInZip(cleanImgPath);
+                        if (imgEntry) {
+                            try {
+                                const blobUrl = URL.createObjectURL(await imgEntry.async("blob"));
+                                mdText = mdText.replace(match[0], `![${match[1]}](${blobUrl})`);
+                            } catch (err) {
+                                console.error("加载 Markdown 格式图片失败:", err);
+                            }
+                        }
+                    }
+                    
+                    readerContent.innerHTML = marked.parse(mdText);
+                }
+                
+                markInstance = new Mark(readerContent);
+                
+                // Add zoom click events for all transformed images
+                const readerImgs = readerContent.querySelectorAll('img');
+                readerImgs.forEach(img => {
+                    img.addEventListener('click', () => openImagePreview(img.src));
+                });
+                
+                const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${currentMdPath}`);
+                
+                setTimeout(() => {
+                    if (lastPercent) {
+                        jumpToPercent(parseFloat(lastPercent));
+                    } else {
+                        readerContent.scrollTop = 0;
+                        progressSlider.value = 0;
+                        progressText.innerText = "0%";
+                    }
+                }, 150);
+            } catch (error) {
+                alert("发生错误:\n" + error.message);
+                showView('catalog-view');
+            }
+        }
+
+        function openBookmarkModal() { document.getElementById('bookmarkModal').classList.add('active'); renderBookmarks(); }
+        function closeBookmarkModal(e) { if(!e || e.target.id === 'bookmarkModal') document.getElementById('bookmarkModal').classList.remove('active'); }
+        function renderBookmarks() {
+            const listDiv = document.getElementById('bookmarkList'); 
+            listDiv.innerHTML = ''; 
+            const book = myLibrary.find(b => b.id === currentBookId);
+            if(!book || !book.bookmarks || book.bookmarks.length === 0) { 
+                listDiv.innerHTML = '<div style="text-align:center; color:var(--muted-text); margin-top:20px; font-weight:800;">您尚未在此分页中添加书签</div>'; 
+                return; 
+            }
+            book.bookmarks.filter(bm => bm.path === currentMdPath).forEach(bm => { 
+                const div = document.createElement('div'); 
+                div.className = 'bm-item'; 
+                div.innerHTML = `<div><div class="bm-title">阅读进度：${bm.percent.toFixed(1)}%</div><div class="bm-progress">添加于: ${bm.time}</div></div><button class="delete-btn">删除</button>`; 
+                div.onclick = () => jumpToPercent(bm.percent); 
+                div.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteBookmark(bm.id); }; 
+                listDiv.appendChild(div); 
+            });
+        }
+        async function addCurrentBookmark() { 
+            const percent = parseFloat(progressSlider.value); 
+            const book = myLibrary.find(b => b.id === currentBookId); 
+            if(!book.bookmarks) book.bookmarks = []; 
+            book.bookmarks.push({ id: Date.now(), path: currentMdPath, percent: percent, time: new Date().toLocaleTimeString() }); 
+            await localforage.setItem('library_meta', myLibrary); 
+            renderBookmarks(); 
+        }
+        async function deleteBookmark(bmId) { 
+            const book = myLibrary.find(b => b.id === currentBookId); 
+            book.bookmarks = book.bookmarks.filter(bm => bm.id !== bmId); 
+            await localforage.setItem('library_meta', myLibrary); 
+            renderBookmarks(); 
+        }
+
+        let markInstance = null; let searchMatches = []; let currentMatchIndex = -1;
+        function toggleSearch() { const bar = document.getElementById('searchBar'); bar.classList.toggle('active'); if(!bar.classList.contains('active')) { if(markInstance) markInstance.unmark(); document.getElementById('searchInput').value = ''; } else document.getElementById('searchInput').focus(); }
+        function performSearch() { const keyword = document.getElementById('searchInput').value; if(!keyword) return; markInstance.unmark({ done: () => { markInstance.mark(keyword, { separateWordSearch: false, done: () => { searchMatches = document.querySelectorAll('mark'); if(searchMatches.length === 0) alert("未找到符合的内容"); else { currentMatchIndex = 0; scrollToMatch(); } }}); }}); }
+        function scrollToMatch() { if(searchMatches.length === 0) return; searchMatches.forEach(el => el.classList.remove('current')); const currentEl = searchMatches[currentMatchIndex]; currentEl.classList.add('current'); const topPos = currentEl.offsetTop - 100; readerContent.scrollTop = topPos > 0 ? topPos : 0; }
+        function nextMatch() { if(searchMatches.length === 0) return; currentMatchIndex = (currentMatchIndex + 1) % searchMatches.length; scrollToMatch(); }
+        function prevMatch() { if(searchMatches.length === 0) return; currentMatchIndex = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length; scrollToMatch(); }
+    </script>
+</body>
+</html>
