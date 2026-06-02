@@ -448,7 +448,7 @@
             renderLibrary(); 
         };
 
-        // Render catalog structure parsed from export.json
+        // Render catalog structure parsed from export.json with monthly extraction grouping
         async function renderCatalogFromJson(catalog) {
             catalogList.innerHTML = '';
             
@@ -457,48 +457,86 @@
                 return;
             }
             
-            // Helpful Quick Continue / Read from Start button
-            const startBtn = document.createElement('div');
-            startBtn.className = 'list-item';
-            startBtn.style.background = 'var(--btn-bg)';
-            startBtn.style.color = 'var(--primary-color)';
-            startBtn.style.borderRadius = '12px';
-            startBtn.style.margin = '14px 20px 8px';
-            startBtn.style.padding = '14px 20px';
-            startBtn.style.fontWeight = '800';
-            startBtn.innerHTML = `<div class="item-title">📖 开始阅读第一章节</div>`;
-            
-            const firstPost = catalog.posts.find(p => p.markdown || p.html || p.file);
-            const firstPath = firstPost ? (firstPost.markdown || firstPost.html || firstPost.file) : null;
-            const firstTitle = firstPost ? (firstPost.display_name || firstPost.title || "第一页") : "开始阅读";
-            if (firstPath) {
-                startBtn.onclick = () => loadAndRenderMarkdown(firstPath, firstTitle, null);
-                catalogList.appendChild(startBtn);
-            }
-            
             for (let i = 0; i < catalog.posts.length; i++) {
                 const item = catalog.posts[i];
                 const postTitle = item.display_name || item.title || `贴子分页 ${i + 1}`;
                 const filePath = item.markdown || item.html || item.file;
                 
                 if (filePath) {
-                    const div = document.createElement('div');
-                    div.className = 'list-item';
-                    
-                    const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
-                    let percentStr = "";
-                    if (lastPercent) {
-                        percentStr = `<span style="font-size: 11px; font-weight: 800; background: var(--btn-bg); color: var(--primary-color); padding: 2px 8px; border-radius: 100px; margin-left: 8px;">已读 ${parseFloat(lastPercent).toFixed(1)}%</span>`;
+                    let fileEntry = findFileInZip(filePath);
+                    if (fileEntry) {
+                        try {
+                            const rawText = await fileEntry.async("string");
+                            const lines = rawText.split('\n');
+                            let monthMap = new Map();
+                            const timeRegex = /楼\s*·\s*时间[：:]\s*(20\d{2})[-/年](\d{1,2})/;
+                            
+                            lines.forEach((line) => {
+                                const match = line.match(timeRegex);
+                                if (match) {
+                                    const y = match[1];
+                                    const m = match[2].padStart(2, '0');
+                                    const monthKey = `${y}年${m}月`;
+                                    
+                                    if (!monthMap.has(monthKey)) {
+                                        let cleanLine = line.replace(/[*_~`#]/g, '').trim();
+                                        monthMap.set(monthKey, cleanLine);
+                                    }
+                                }
+                            });
+
+                            const postHeader = document.createElement('div');
+                            postHeader.className = 'month-header';
+                            postHeader.innerHTML = `<span>📑 ${postTitle}</span> <span class="toggle-icon">▼</span>`;
+                            
+                            const monthContainer = document.createElement('div');
+                            monthContainer.className = 'month-container';
+                            monthContainer.style.display = 'block';
+                            
+                            postHeader.onclick = () => {
+                                const isHidden = monthContainer.style.display === 'none';
+                                monthContainer.style.display = isHidden ? 'block' : 'none';
+                                postHeader.querySelector('.toggle-icon').className = isHidden ? 'toggle-icon' : 'toggle-icon collapsed';
+                            };
+
+                            const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
+                            if (lastPercent) {
+                                const continueDiv = document.createElement('div');
+                                continueDiv.className = 'list-item';
+                                continueDiv.style.color = 'var(--primary-color)';
+                                continueDiv.style.fontWeight = 'bold';
+                                continueDiv.innerHTML = `<div class="item-title">⏱️ 继续上次阅读 (${parseFloat(lastPercent).toFixed(1)}%)</div>`;
+                                continueDiv.onclick = () => loadAndRenderMarkdown(filePath, postTitle, null);
+                                monthContainer.appendChild(continueDiv);
+                            }
+
+                            if (monthMap.size > 0) {
+                                for (let [month, exactLine] of monthMap) {
+                                    const div = document.createElement('div');
+                                    div.className = 'list-item';
+                                    div.innerHTML = `<div class="item-title">📅 ${month}</div>`;
+                                    div.onclick = () => loadAndRenderMarkdown(filePath, postTitle, exactLine);
+                                    monthContainer.appendChild(div);
+                                }
+                            } else {
+                                const div = document.createElement('div');
+                                div.className = 'list-item';
+                                div.innerHTML = `<div class="item-title">📄 进入第一页</div>`;
+                                div.onclick = () => loadAndRenderMarkdown(filePath, postTitle, null);
+                                monthContainer.appendChild(div);
+                            }
+                            
+                            catalogList.appendChild(postHeader);
+                            catalogList.appendChild(monthContainer);
+                        } catch (err) {
+                            console.error("解析帖子月份失败:", err);
+                        }
                     }
-                    
-                    div.innerHTML = `<div class="item-title">📄 ${postTitle} ${percentStr}</div>`;
-                    div.onclick = () => loadAndRenderMarkdown(filePath, postTitle, null);
-                    catalogList.appendChild(div);
                 }
             }
         }
 
-        // Render catalog structure automatically scanned from readable raw files
+        // Render catalog structure automatically scanned from readable raw files with monthly extraction grouping
         async function renderCatalogFromScanning() {
             catalogList.innerHTML = '';
             const files = [];
@@ -519,41 +557,84 @@
                 return;
             }
             
-            // Sort files numerically / alphabetically to preserve chronological floor offsets
             files.sort((a, b) => {
                 return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
             });
             
-            const startBtn = document.createElement('div');
-            startBtn.className = 'list-item';
-            startBtn.style.background = 'var(--btn-bg)';
-            startBtn.style.color = 'var(--primary-color)';
-            startBtn.style.borderRadius = '12px';
-            startBtn.style.margin = '14px 20px 8px';
-            startBtn.style.padding = '14px 20px';
-            startBtn.style.fontWeight = '800';
-            startBtn.innerHTML = `<div class="item-title">📖 从头开始阅读</div>`;
-            
-            const firstPath = files[0];
-            const firstTitle = firstPath.split('/').pop().replace(/\.(html|htm|md|txt)$/i, '');
-            startBtn.onclick = () => loadAndRenderMarkdown(firstPath, firstTitle, null);
-            catalogList.appendChild(startBtn);
-            
-            files.forEach(filePath => {
+            for (let i = 0; i < files.length; i++) {
+                const filePath = files[i];
                 const displayName = filePath.split('/').pop().replace(/\.(html|htm|md|txt)$/i, '');
-                const div = document.createElement('div');
-                div.className = 'list-item';
                 
-                const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
-                let percentStr = "";
-                if (lastPercent) {
-                    percentStr = `<span style="font-size: 11px; font-weight: 800; background: var(--btn-bg); color: var(--primary-color); padding: 2px 8px; border-radius: 100px; margin-left: 8px;">已读 ${parseFloat(lastPercent).toFixed(1)}%</span>`;
+                let fileEntry = findFileInZip(filePath);
+                if (fileEntry) {
+                    try {
+                        const rawText = await fileEntry.async("string");
+                        const lines = rawText.split('\n');
+                        let monthMap = new Map();
+                        const timeRegex = /楼\s*·\s*时间[：:]\s*(20\d{2})[-/年](\d{1,2})/;
+                        
+                        lines.forEach((line) => {
+                            const match = line.match(timeRegex);
+                            if (match) {
+                                const y = match[1];
+                                const m = match[2].padStart(2, '0');
+                                const monthKey = `${y}年${m}月`;
+                                
+                                if (!monthMap.has(monthKey)) {
+                                    let cleanLine = line.replace(/[*_~`#]/g, '').trim();
+                                    monthMap.set(monthKey, cleanLine);
+                                }
+                            }
+                        });
+
+                        const postHeader = document.createElement('div');
+                        postHeader.className = 'month-header';
+                        postHeader.innerHTML = `<span>📑 ${displayName}</span> <span class="toggle-icon">▼</span>`;
+                        
+                        const monthContainer = document.createElement('div');
+                        monthContainer.className = 'month-container';
+                        monthContainer.style.display = 'block';
+                        
+                        postHeader.onclick = () => {
+                            const isHidden = monthContainer.style.display === 'none';
+                            monthContainer.style.display = isHidden ? 'block' : 'none';
+                            postHeader.querySelector('.toggle-icon').className = isHidden ? 'toggle-icon' : 'toggle-icon collapsed';
+                        };
+
+                        const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${filePath}`);
+                        if (lastPercent) {
+                            const continueDiv = document.createElement('div');
+                            continueDiv.className = 'list-item';
+                            continueDiv.style.color = 'var(--primary-color)';
+                            continueDiv.style.fontWeight = 'bold';
+                            continueDiv.innerHTML = `<div class="item-title">⏱️ 继续上次阅读 (${parseFloat(lastPercent).toFixed(1)}%)</div>`;
+                            continueDiv.onclick = () => loadAndRenderMarkdown(filePath, displayName, null);
+                            monthContainer.appendChild(continueDiv);
+                        }
+
+                        if (monthMap.size > 0) {
+                            for (let [month, exactLine] of monthMap) {
+                                const div = document.createElement('div');
+                                div.className = 'list-item';
+                                div.innerHTML = `<div class="item-title">📅 ${month}</div>`;
+                                div.onclick = () => loadAndRenderMarkdown(filePath, displayName, exactLine);
+                                monthContainer.appendChild(div);
+                            }
+                        } else {
+                            const div = document.createElement('div');
+                            div.className = 'list-item';
+                            div.innerHTML = `<div class="item-title">📄 全文阅读</div>`;
+                            div.onclick = () => loadAndRenderMarkdown(filePath, displayName, null);
+                            monthContainer.appendChild(div);
+                        }
+                        
+                        catalogList.appendChild(postHeader);
+                        catalogList.appendChild(monthContainer);
+                    } catch (err) {
+                        console.error("扫描帖子月份失败:", err);
+                    }
                 }
-                
-                div.innerHTML = `<div class="item-title">📄 ${displayName} ${percentStr}</div>`;
-                div.onclick = () => loadAndRenderMarkdown(filePath, displayName, null);
-                catalogList.appendChild(div);
-            });
+            }
         }
 
         async function openBook(id, title) {
@@ -735,15 +816,31 @@
                 
                 const lastPercent = localStorage.getItem(`lastRead_${currentBookId}_${currentMdPath}`);
                 
-                setTimeout(() => {
-                    if (lastPercent) {
-                        jumpToPercent(parseFloat(lastPercent));
-                    } else {
-                        readerContent.scrollTop = 0;
-                        progressSlider.value = 0;
-                        progressText.innerText = "0%";
-                    }
-                }, 150);
+                // 如果用户点击了目录中的某个月份，则进行文本扫描并精准滚动
+                if (targetSearchText) {
+                    setTimeout(() => {
+                        const elements = readerContent.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+                        let found = false;
+                        for (let el of elements) {
+                            if (el.innerText.includes(targetSearchText)) {
+                                const topPos = el.offsetTop - 60; // 留出顶部导航栏高度
+                                readerContent.scrollTo({ top: topPos > 0 ? topPos : 0, behavior: 'smooth' });
+                                found = true;
+                                break;
+                            }
+                        }
+                        // 如果因为特殊符号没匹配上，回退到历史记忆位置
+                        if (!found && lastPercent) { jumpToPercent(parseFloat(lastPercent)); }
+                    }, 150);
+                } 
+                // 用户点击“继续上次阅读”或者直接进入时，恢复记忆位置
+                else if (lastPercent) {
+                    setTimeout(() => jumpToPercent(parseFloat(lastPercent)), 150);
+                } else {
+                    readerContent.scrollTop = 0;
+                    progressSlider.value = 0;
+                    progressText.innerText = "0%";
+                }
             } catch (error) {
                 alert("发生错误:\n" + error.message);
                 showView('catalog-view');
