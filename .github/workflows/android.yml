@@ -22,11 +22,14 @@ jobs:
     - name: Setup Global Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Create missing config files
-      # 凭空创建缺失的隐藏配置文件，防止 build.gradle 报错
+    - name: Prepare missing files and Keystore
       run: |
+        # 创建缺失的隐藏环境变量文件
         touch .env.example
         touch .env
+        
+        # 将 base64 文本格式的签名还原成真正的二进制密钥库文件
+        base64 -d debug.keystore.base64 > debug.keystore
 
     - name: Build debug APK
       run: gradle assembleDebug
