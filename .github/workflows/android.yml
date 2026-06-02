@@ -22,16 +22,13 @@ jobs:
     - name: Setup Global Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Auto-detect and Build
-      run: |
-        # 既然没有 gradlew，我们就去找安卓核心的 build.gradle 文件所在的位置
-        cd $(dirname $(find . -name "build.gradle" | head -n 1))
-        
-        # 不再使用 ./gradlew，而是直接呼叫系统级别的 gradle 命令强行打包
-        gradle assembleDebug
+    - name: Build debug APK
+      # 因为你的文件全在最外层，且使用的是 .kts，直接在此处呼叫全局 gradle 即可
+      run: gradle assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug-apk
-        path: "**/app/build/outputs/apk/debug/**/*.apk"
+        # 抓取 app 文件夹下生成的 apk 文件
+        path: "app/build/outputs/apk/debug/**/*.apk"
