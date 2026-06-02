@@ -1,26 +1,33 @@
-name: Android CI   名称：Android CI
+name   名字: Android CI
 
 on:   :
   push:   推动:
-    branches: [ "main" ]   branches   分支机构: [ "main" ]
-  pull_request:
-    branches: [ "main" ]   branches   分支机构: [ "main" ]
+    branches: [ "main", "master" ]
+  workflow_dispatch: # 允许你在网页上手动点击按钮来触发打包
 
 jobs:   工作:
   build:   构建:
+    runs-on: ubuntu-latest   上运行:ubuntu-latest
 
-    runs-on: ubuntu-latest
+    steps:   步骤:
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-    steps:
-    - uses: actions/checkout@v4
-    - name: set up JDK 11
-      uses: actions/setup-java@v4
-      with:
-        java-version: '11'
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4用途:行动/ setup-java@v4
+      with:   :
+        java-version: '17'
         distribution: 'temurin'
-        cache: gradle
+        cache: gradle   缓存:gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+    - name: Grant execute permission for gradlew—name：授予gradlew执行权限
+      run: chmod +x gradlew   执行命令chmod x gradlew
+
+    - name: Build debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:   :
+        name: app-debug-apk
+        path: app/build/outputs/apk/debug/**/*.apk
